@@ -16,9 +16,12 @@ import { CreatePokemonDto } from './dto/create-pokemon.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { UpdatePokemonDto } from './dto/update-pokemon.dto';
 import { POKEMON_DELETE_SUCCESS } from './pokemon.constants';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('pokemon')
+@ApiTags('pokemon')
 export class PokemonController {
   constructor(private pokemonService: PokemonService) {}
 
@@ -34,7 +37,7 @@ export class PokemonController {
     return res.status(200).json(pokemon);
   }
 
-  @Post('/create')
+  @Post()
   async create(
     @Body() data: CreatePokemonDto,
     @Req() req,
@@ -45,7 +48,7 @@ export class PokemonController {
     return res.status(201).json(pokemon);
   }
 
-  @Patch('/update/:id')
+  @Patch(':id')
   async update(
     @Body() data: UpdatePokemonDto,
     @Param('id') id: string,
@@ -57,7 +60,7 @@ export class PokemonController {
     return res.status(200).json(pokemon);
   }
 
-  @Delete('/delete/:id')
+  @Delete(':id')
   async delete(@Param('id') id: string, @Req() req, @Res() res) {
     const userId = req.user.userId;
     await this.pokemonService.delete(id, userId);
