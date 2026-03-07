@@ -9,7 +9,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:3000',
-      'https://pokemon-center-backend-ch02.onrender.com/',
+      'https://pokemon-center-frontend.vercel.app/',
     ],
   });
 
