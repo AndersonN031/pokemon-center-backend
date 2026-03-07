@@ -26,8 +26,9 @@ export class PokemonController {
   constructor(private pokemonService: PokemonService) {}
 
   @Get()
-  async findAll(@Res() res): Promise<Pokemon> {
-    const pokemon = await this.pokemonService.findAll();
+  async findAll(@Req() req, @Res() res): Promise<Pokemon> {
+    const userId = req.user.userId;
+    const pokemon = await this.pokemonService.findAll(userId);
     return res.status(200).json(pokemon);
   }
 
