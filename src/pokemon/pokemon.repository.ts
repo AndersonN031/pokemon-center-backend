@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Pokemon } from './pokemon.entity';
 import { CreatePokemonDto } from './dto/create-pokemon.dto';
+import { UpdatePokemonDto } from './dto/update-pokemon.dto';
 
 @Injectable()
 export class PokemonRepository {
@@ -11,6 +12,19 @@ export class PokemonRepository {
     return this.prisma.pokemon.findMany();
   }
 
+  async findById(id: string): Promise<Pokemon | any> {
+    const pokemon = await this.prisma.pokemon.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    if (!pokemon) {
+      throw new NotFoundException('Pokemon not found');
+    }
+
+    return pokemon;
+  }
 
   async create(data: CreatePokemonDto, userId: string): Promise<Pokemon | any> {
     const findUserById = await this.prisma.user.findUnique({
@@ -20,7 +34,7 @@ export class PokemonRepository {
     });
 
     if (!findUserById) {
-      throw new Error('User not found');
+      throw new NotFoundException('User not found');
     }
 
     const pokemon = await this.prisma.pokemon.create({
@@ -31,5 +45,44 @@ export class PokemonRepository {
     });
 
     return pokemon;
+  }
+
+  async update(data: UpdatePokemonDto, userId: string): Promise<Pokemon | any> {
+    const findPokemonById = await this.prisma.pokemon.findUnique({
+      where: {
+        id: userId,
+      },
+    });
+
+    if (!findPokemonById) {
+      throw new NotFoundException('Pokemon not found');
+    }
+
+    const pokemon = await this.prisma.pokemon.update({
+      where: {
+        id: userId,
+      },
+      data,
+    });
+
+    return pokemon;
+  }
+
+  async delete(id: string){
+    const findPokemonById = await this.prisma.pokemon.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    if (!findPokemonById) {
+      throw new NotFoundException('Pokemon not found');
+    } else {
+      await this.prisma.pokemon.delete({
+        where: {
+          id,
+        },
+      });
+    }
   }
 }

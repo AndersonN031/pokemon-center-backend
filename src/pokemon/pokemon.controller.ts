@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -11,6 +14,7 @@ import { Pokemon } from './pokemon.entity';
 import { PokemonService } from './pokemon.service';
 import { CreatePokemonDto } from './dto/create-pokemon.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { UpdatePokemonDto } from './dto/update-pokemon.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('pokemon')
@@ -23,7 +27,13 @@ export class PokemonController {
     return res.status(200).json(pokemon);
   }
 
-  @Post()
+  @Get(':id')
+  async findById(@Param('id') id: string, @Res() res): Promise<Pokemon> {
+    const pokemon = await this.pokemonService.findById(id);
+    return res.status(200).json(pokemon);
+  }
+
+  @Post('/create')
   async create(
     @Body() data: CreatePokemonDto,
     @Req() req,
@@ -32,5 +42,21 @@ export class PokemonController {
     const userId = req.user.userId;
     const pokemon = await this.pokemonService.create(data, userId);
     return res.status(201).json(pokemon);
+  }
+
+  @Patch('/update/:id')
+  async update(
+    @Body() data: UpdatePokemonDto,
+    @Param('id') id: string,
+    @Res() res,
+  ): Promise<Pokemon> {
+    const pokemon = await this.pokemonService.update(data, id);
+    return res.status(200).json(pokemon);
+  }
+
+  @Delete('/delete/:id')
+  async delete(@Param('id') id: string, @Res() res){
+    await this.pokemonService.delete(id);
+    return res.status(200).json({ message: 'Pokemon deleted successfully' });
   }
 }
