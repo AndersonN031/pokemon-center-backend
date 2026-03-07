@@ -15,6 +15,7 @@ import { PokemonService } from './pokemon.service';
 import { CreatePokemonDto } from './dto/create-pokemon.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { UpdatePokemonDto } from './dto/update-pokemon.dto';
+import { POKEMON_DELETE_SUCCESS } from './pokemon.constants';
 
 @UseGuards(JwtAuthGuard)
 @Controller('pokemon')
@@ -59,7 +60,7 @@ export class PokemonController {
   @Delete('/delete/:id')
   async delete(@Param('id') id: string, @Req() req, @Res() res) {
     const userId = req.user.userId;
-    await this.pokemonService.delete(id, req.user.userId);
-    return res.status(200).json({ message: 'Pokemon deleted successfully' });
+    await this.pokemonService.delete(id, userId);
+    return res.status(200).json({ message: POKEMON_DELETE_SUCCESS });
   }
 }

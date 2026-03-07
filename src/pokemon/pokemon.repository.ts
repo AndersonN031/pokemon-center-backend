@@ -3,6 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { Pokemon } from './pokemon.entity';
 import { CreatePokemonDto } from './dto/create-pokemon.dto';
 import { UpdatePokemonDto } from './dto/update-pokemon.dto';
+import { POKEMON_NOT_FOUND } from './pokemon.constants';
 
 @Injectable()
 export class PokemonRepository {
@@ -20,7 +21,7 @@ export class PokemonRepository {
     });
 
     if (!pokemon) {
-      throw new NotFoundException('Pokemon not found');
+      throw new NotFoundException([POKEMON_NOT_FOUND]);
     }
 
     return pokemon;
@@ -34,7 +35,7 @@ export class PokemonRepository {
     });
 
     if (!findUserById) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException([POKEMON_NOT_FOUND]);
     }
 
     const pokemon = await this.prisma.pokemon.create({
@@ -59,7 +60,7 @@ export class PokemonRepository {
     });
 
     if (!findPokemonById || findPokemonById.createdBy !== userId) {
-      throw new NotFoundException('Pokemon not found');
+      throw new NotFoundException([POKEMON_NOT_FOUND]);
     }
 
     const pokemon = await this.prisma.pokemon.update({
@@ -80,7 +81,7 @@ export class PokemonRepository {
     });
 
     if (!findPokemonById || findPokemonById.createdBy !== userId) {
-      throw new NotFoundException('Pokemon not found');
+      throw new NotFoundException([POKEMON_NOT_FOUND]);
     } else {
       await this.prisma.pokemon.delete({
         where: {

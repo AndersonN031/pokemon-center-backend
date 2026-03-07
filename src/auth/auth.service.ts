@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { EMAIL_ALREADY_EXISTS, INVALID_CREDENTIALS } from './auth.constants';
 
 @Injectable()
 export class AuthService {
@@ -20,7 +21,7 @@ export class AuthService {
     const userExists = await this.usersService.findByEmail(data.email);
 
     if (userExists) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException([EMAIL_ALREADY_EXISTS]);
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
@@ -42,13 +43,13 @@ export class AuthService {
     const user = await this.usersService.findByEmail(data.email);
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException([INVALID_CREDENTIALS]);
     }
 
     const passwordMatch = await bcrypt.compare(data.password, user.password);
 
     if (!passwordMatch) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException([INVALID_CREDENTIALS]);
     }
 
     const payload = {
