@@ -47,20 +47,24 @@ export class PokemonRepository {
     return pokemon;
   }
 
-  async update(data: UpdatePokemonDto, userId: string): Promise<Pokemon | any> {
+  async update(
+    data: UpdatePokemonDto,
+    userId: string,
+    id: string,
+  ): Promise<Pokemon | any> {
     const findPokemonById = await this.prisma.pokemon.findUnique({
       where: {
-        id: userId,
+        id: id,
       },
     });
 
-    if (!findPokemonById) {
+    if (!findPokemonById || findPokemonById.createdBy !== userId) {
       throw new NotFoundException('Pokemon not found');
     }
 
     const pokemon = await this.prisma.pokemon.update({
       where: {
-        id: userId,
+        id: id,
       },
       data,
     });
@@ -68,14 +72,14 @@ export class PokemonRepository {
     return pokemon;
   }
 
-  async delete(id: string){
+  async delete(id: string, userId: string) {
     const findPokemonById = await this.prisma.pokemon.findUnique({
       where: {
         id,
       },
     });
 
-    if (!findPokemonById) {
+    if (!findPokemonById || findPokemonById.createdBy !== userId) {
       throw new NotFoundException('Pokemon not found');
     } else {
       await this.prisma.pokemon.delete({

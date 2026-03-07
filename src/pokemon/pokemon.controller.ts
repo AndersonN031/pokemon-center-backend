@@ -48,15 +48,18 @@ export class PokemonController {
   async update(
     @Body() data: UpdatePokemonDto,
     @Param('id') id: string,
+    @Req() req,
     @Res() res,
   ): Promise<Pokemon> {
-    const pokemon = await this.pokemonService.update(data, id);
+    const userId = req.user.userId;
+    const pokemon = await this.pokemonService.update(data, userId, id);
     return res.status(200).json(pokemon);
   }
 
   @Delete('/delete/:id')
-  async delete(@Param('id') id: string, @Res() res){
-    await this.pokemonService.delete(id);
+  async delete(@Param('id') id: string, @Req() req, @Res() res) {
+    const userId = req.user.userId;
+    await this.pokemonService.delete(id, req.user.userId);
     return res.status(200).json({ message: 'Pokemon deleted successfully' });
   }
 }

@@ -28,17 +28,21 @@ export class PokemonService {
     }
   }
 
-  async update(data: UpdatePokemonDto, userId: string): Promise<Pokemon | any> {
+  async update(
+    data: UpdatePokemonDto,
+    userId: string,
+    id: string,
+  ): Promise<Pokemon | any> {
     try {
-      return this.pokemonRepository.update(data, userId);
+      return this.pokemonRepository.update(data, userId, id);
     } catch (error) {
       throw error;
     }
   }
 
-  async delete(id: string) {
+  async delete(id: string, userId: string) {
     try {
-      await this.pokemonRepository.delete(id);
+      await this.pokemonRepository.delete(id, userId);
     } catch (error) {
       throw error;
     }
