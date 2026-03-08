@@ -18,6 +18,13 @@ export class PokemonRepository {
       orderBy: {
         pokedexNumber: 'asc',
       },
+      include: {
+        user: {
+          select: {
+            name: true,
+          }
+        }
+      }
     });
 
     const total = await this.prisma.pokemon.count();
