@@ -8,9 +8,9 @@ import { UpdatePokemonDto } from './dto/update-pokemon.dto';
 export class PokemonService {
   constructor(private readonly pokemonRepository: PokemonRepository) {}
 
-  async globalListPokemons(): Promise<Pokemon | any> {
+  async globalListPokemons(page: number, limit:number): Promise<Pokemon | any> {
     try {
-      return this.pokemonRepository.globalListPokemons()
+      return this.pokemonRepository.globalListPokemons(page, limit)
     } catch (error) {
       throw error;
     }

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -26,10 +27,18 @@ export class PokemonController {
   constructor(private pokemonService: PokemonService) {}
 
   @Get('all')
-  async globalListPokemons(@Res() res): Promise<Pokemon> {
-    const pokemon = await this.pokemonService.globalListPokemons();
+  async globalListPokemons(
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Res() res,
+  ): Promise<Pokemon> {
+    const pokemon = await this.pokemonService.globalListPokemons(
+      Number(page),
+      Number(limit),
+    );
     return res.status(200).json(pokemon);
   }
+
   @Get()
   async findAll(@Req() req, @Res() res): Promise<Pokemon> {
     const userId = req.user.userId;

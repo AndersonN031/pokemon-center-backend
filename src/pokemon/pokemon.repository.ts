@@ -9,10 +9,26 @@ import { POKEMON_NOT_FOUND } from './pokemon.constants';
 export class PokemonRepository {
   constructor(private prisma: PrismaService) {}
 
-  async globalListPokemons(): Promise<Pokemon | any> {
-    return this.prisma.pokemon.findMany()
-  };
+  async globalListPokemons(page: number, limit: number) {
+    const skip = (page - 1) * limit;
 
+    const pokemons = await this.prisma.pokemon.findMany({
+      skip,
+      take: limit,
+      orderBy: {
+        pokedexNumber: 'asc',
+      },
+    });
+
+    const total = await this.prisma.pokemon.count();
+
+    return {
+      data: pokemons,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
   async findAll(userId: string): Promise<Pokemon | any> {
     return this.prisma.pokemon.findMany({
       where: {
