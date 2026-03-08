@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { User } from '@prisma/client';
+import { Prisma, User } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UsersEntity } from './users.entity';
 
@@ -27,12 +27,23 @@ export class UsersService {
   }
 
   async create(data: CreateUserDto): Promise<User> {
-    return this.prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        password: data.password,
-      },
-    });
+    try {
+      return await this.prisma.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          password: data.password,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Email já cadastrado');
+      }
+
+      throw error;
+    }
   }
 }
