@@ -25,6 +25,11 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 export class PokemonController {
   constructor(private pokemonService: PokemonService) {}
 
+  @Get('all')
+  async globalListPokemons(@Res() res): Promise<Pokemon> {
+    const pokemon = await this.pokemonService.globalListPokemons();
+    return res.status(200).json(pokemon);
+  }
   @Get()
   async findAll(@Req() req, @Res() res): Promise<Pokemon> {
     const userId = req.user.userId;

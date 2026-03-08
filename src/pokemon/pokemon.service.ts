@@ -8,8 +8,20 @@ import { UpdatePokemonDto } from './dto/update-pokemon.dto';
 export class PokemonService {
   constructor(private readonly pokemonRepository: PokemonRepository) {}
 
+  async globalListPokemons(): Promise<Pokemon | any> {
+    try {
+      return this.pokemonRepository.globalListPokemons()
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async findAll(userId: string): Promise<Pokemon | any> {
-    return this.pokemonRepository.findAll(userId);
+    try {
+      return this.pokemonRepository.findAll(userId);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async findById(id: string): Promise<Pokemon | any> {

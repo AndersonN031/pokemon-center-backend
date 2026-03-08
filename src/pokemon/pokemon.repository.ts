@@ -9,6 +9,10 @@ import { POKEMON_NOT_FOUND } from './pokemon.constants';
 export class PokemonRepository {
   constructor(private prisma: PrismaService) {}
 
+  async globalListPokemons(): Promise<Pokemon | any> {
+    return this.prisma.pokemon.findMany()
+  };
+
   async findAll(userId: string): Promise<Pokemon | any> {
     return this.prisma.pokemon.findMany({
       where: {
