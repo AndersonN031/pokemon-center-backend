@@ -29,7 +29,7 @@ export class PokemonController {
   @Get('all')
   async globalListPokemons(
     @Query('page') page = 1,
-    @Query('limit') limit = 50,
+    @Query('limit') limit = 20,
     @Res() res,
   ): Promise<Pokemon> {
     const pokemon = await this.pokemonService.globalListPokemons(
