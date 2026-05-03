@@ -297,7 +297,7 @@ export class ManhwaService {
           });
 
           total++;
-          await this.delay(800); // delay respeitoso entre capítulos
+          await this.delay(2000 + Math.random() * 2000); // delay respeitoso entre capítulos
         } catch (err: any) {
           this.logger.warn(
             `Error scraping chapter ${ch.number}: ${err.message}`,
@@ -419,7 +419,7 @@ export class ManhwaService {
               });
 
               totalChapters++;
-              await this.delay(500);
+              await this.delay(4000 + Math.random() * 2000);
             } catch (err: any) {
               this.logger.warn(
                 `Error on chapter ${ch.number} of ${manhwa.title}: ${err.message}`,
