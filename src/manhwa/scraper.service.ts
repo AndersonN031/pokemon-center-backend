@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 
 export interface ScrapedManhwa {
@@ -28,8 +28,17 @@ export interface ScrapedChapter {
 export class ScraperService {
   private readonly logger = new Logger(ScraperService.name);
 
+  // ─── Rate limiting state ─────────────────────────────────────
+  private lastRequestAt = 0;
+  private consecutiveErrors = 0;
+
+  private readonly MIN_DELAY_MS = 3000;
+  private readonly BASE_BACKOFF_MS = 10000;
+  private readonly MAX_BACKOFF_MS = 120000;
+  private readonly MAX_RETRIES = 4;
+
   private readonly httpClient = axios.create({
-    timeout: 15000,
+    timeout: 20000,
     httpsAgent: new https.Agent({ rejectUnauthorized: false }),
     headers: {
       'User-Agent':
@@ -47,12 +56,71 @@ export class ScraperService {
     },
   });
 
-  private async fetchPage(url: string): Promise<string | null> {
+  // ─── Core fetch com retry + backoff exponencial ──────────────
+
+  async fetchPage(url: string, attempt = 1): Promise<string | null> {
+    // Garante intervalo mínimo entre requests
+    const now = Date.now();
+    const elapsed = now - this.lastRequestAt;
+    if (elapsed < this.MIN_DELAY_MS) {
+      await this.delay(this.MIN_DELAY_MS - elapsed);
+    }
+    this.lastRequestAt = Date.now();
+
     try {
       const response = await this.httpClient.get<string>(url);
+      this.consecutiveErrors = 0;
       return response.data;
     } catch (error: any) {
-      this.logger.error(`Failed to fetch ${url}: ${error.message}`);
+      const status = (error as AxiosError)?.response?.status;
+
+      // ── 429 Too Many Requests ───────────────────────────────
+      if (status === 429) {
+        this.consecutiveErrors++;
+
+        if (attempt > this.MAX_RETRIES) {
+          this.logger.error(
+            `[429] Desistindo de ${url} após ${attempt - 1} tentativas`,
+          );
+          return null;
+        }
+
+        // Backoff exponencial com cap: 10s → 20s → 40s → 80s → 120s
+        const backoff = Math.min(
+          this.BASE_BACKOFF_MS * Math.pow(2, attempt - 1),
+          this.MAX_BACKOFF_MS,
+        );
+
+        // Respeita Retry-After se o servidor enviar
+        const retryAfterRaw = (error as AxiosError)?.response?.headers?.[
+          'retry-after'
+        ];
+        const retryAfterMs = retryAfterRaw
+          ? parseInt(String(retryAfterRaw), 10) * 1000
+          : backoff;
+
+        const waitMs = Math.max(retryAfterMs, backoff);
+        this.logger.warn(
+          `[429] Tentativa ${attempt}/${this.MAX_RETRIES} — aguardando ${(waitMs / 1000).toFixed(0)}s → ${url}`,
+        );
+
+        await this.delay(waitMs);
+        return this.fetchPage(url, attempt + 1);
+      }
+
+      // ── 403 / 503 ───────────────────────────────────────────
+      if ((status === 403 || status === 503) && attempt <= 2) {
+        const wait = 15000 * attempt;
+        this.logger.warn(
+          `[${status}] Tentativa ${attempt}, aguardando ${wait / 1000}s → ${url}`,
+        );
+        await this.delay(wait);
+        return this.fetchPage(url, attempt + 1);
+      }
+
+      this.logger.error(
+        `Falha ao buscar ${url}: ${error.message} (status ${status ?? 'N/A'})`,
+      );
       return null;
     }
   }
@@ -67,17 +135,11 @@ export class ScraperService {
   }
 
   private extractSlugFromUrl(url: string): string {
-    // https://nocfsb.com/manga/azar-do-cavalo/ → "azar-do-cavalo"
     return url.replace(/\/$/, '').split('/').pop() ?? this.slugify(url);
   }
 
-  // ─────────────────────────────────────────────
-  //  LIST SCRAPER
-  //  URL: https://nocfsb.com/manga/?page=N
-  //
-  //  Observed structure:
-  //  Each item has: img + h3 > a[href, title] + .mg_author a
-  // ─────────────────────────────────────────────
+  // ─── LIST SCRAPER ────────────────────────────────────────────
+
   async scrapeNocfsbList(page = 1): Promise<ScrapedManhwa[]> {
     const url = `https://nocfsb.com/manga/?page=${page}`;
     this.logger.log(`Scraping nocfsb list page ${page}: ${url}`);
@@ -89,7 +151,6 @@ export class ScraperService {
     const manhwas: ScrapedManhwa[] = [];
     const seen = new Set<string>();
 
-    // Seletor correto para o tema do nocfsb
     $('div.page-item-detail, div.c-image-hover').each((_, el) => {
       const $el = $(el);
       const $a = $el.find('h3 a, .h5 a').first();
@@ -121,18 +182,8 @@ export class ScraperService {
     return manhwas;
   }
 
-  // ─────────────────────────────────────────────
-  //  DETAIL SCRAPER
-  //  URL: https://nocfsb.com/manga/slug/
-  //
-  //  Observed structure:
-  //  .summary_image img           → cover
-  //  .description-summary p       → synopsis
-  //  .post-content_item           → each metadata row (autor, artista, gênero, estado)
-  //   └ .summary-heading          → label
-  //   └ .summary-content          → value / links
-  //  ul.main-version-detail li    → chapter list
-  // ─────────────────────────────────────────────
+  // ─── DETAIL SCRAPER ──────────────────────────────────────────
+
   async scrapeNocfsbDetail(url: string): Promise<Partial<ScrapedManhwa>> {
     const html = await this.fetchPage(url);
     if (!html) return {};
@@ -176,7 +227,6 @@ export class ScraperService {
           $content.text().trim() ||
           undefined;
       } else if (heading.includes('estado') || heading.includes('status')) {
-        // Status may contain emoji like "🟢 Ativo"
         status = $content.text().trim() || undefined;
       } else if (heading.includes('genero') || heading.includes('genre')) {
         $content.find('a').each((_, a) => {
@@ -186,7 +236,6 @@ export class ScraperService {
       }
     });
 
-    // Genre fallback from breadcrumb or sidebar links
     if (genres.length === 0) {
       $('a[href*="manga-genre"]').each((_, el) => {
         const g = $(el).text().trim();
@@ -194,7 +243,6 @@ export class ScraperService {
       });
     }
 
-    // Status fallback from page title emoji
     if (!status) {
       const h1 = $('h1').first().text();
       if (h1.includes('🟢')) status = 'Ativo';
@@ -202,7 +250,6 @@ export class ScraperService {
       else if (h1.includes('🟡')) status = 'Hiato';
     }
 
-    // Chapter count: count all chapter links
     const chapters =
       $(
         'ul.main-version-detail li a, .wp-manga-chapter a, li.wp-manga-chapter a',
@@ -211,12 +258,8 @@ export class ScraperService {
     return { cover, description, author, artist, status, genres, chapters };
   }
 
-  // ─────────────────────────────────────────────
-  //  CHAPTER SCRAPER
-  //  URL: https://nocfsb.com/manga/slug/capitulo-X/
-  //
-  //  Images inside #readerarea img
-  // ─────────────────────────────────────────────
+  // ─── CHAPTER PAGE SCRAPER ────────────────────────────────────
+
   async scrapeNocfsbChapter(
     url: string,
     number: number,
@@ -226,15 +269,79 @@ export class ScraperService {
 
     const $ = cheerio.load(html);
     const pages: string[] = [];
+    const seen = new Set<string>();
 
-    $('#readerarea img, .reading-content img').each((_, el) => {
-      const src =
-        $(el).attr('src') ||
-        $(el).attr('data-src') ||
-        $(el).attr('data-lazy-src');
-      if (src && src.startsWith('http')) pages.push(src);
-    });
+    // Seletores em ordem de prioridade (do mais específico ao mais genérico)
+    const imgSelectors = [
+      '#readerarea img',
+      '.reading-content img',
+      '.entry-content img',
+      'article img',
+    ];
+
+    for (const selector of imgSelectors) {
+      $(selector).each((_, el) => {
+        const src = (
+          $(el).attr('src') ||
+          $(el).attr('data-src') ||
+          $(el).attr('data-lazy-src') ||
+          $(el).attr('data-original') ||
+          ''
+        ).trim();
+
+        if (
+          src.startsWith('http') &&
+          !seen.has(src) &&
+          !src.includes('placeholder') &&
+          !src.includes('avatar') &&
+          !src.includes('logo') &&
+          /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src)
+        ) {
+          seen.add(src);
+          pages.push(src);
+        }
+      });
+
+      if (pages.length > 0) break;
+    }
+
+    // Fallback: tenta extrair URLs de variáveis JS (padrão WP Manga Reader)
+    if (pages.length === 0) {
+      // Tenta ts_reader.run({"sources":[{"images":["..."]}]})
+      const tsMatch = html.match(/ts_reader\.run\((\{.*?\})\)/s);
+      if (tsMatch) {
+        try {
+          const data = JSON.parse(tsMatch[1]);
+          const images: string[] =
+            data?.sources?.[0]?.images ??
+            data?.sources?.flatMap((s: any) => s.images ?? []) ??
+            [];
+          images.forEach((u) => {
+            if (u.startsWith('http') && !seen.has(u)) {
+              seen.add(u);
+              pages.push(u);
+            }
+          });
+        } catch {
+          // ignora erros de parse
+        }
+      }
+    }
+
+    if (pages.length === 0) {
+      this.logger.warn(
+        `Nenhuma imagem encontrada no capítulo ${number}: ${url}`,
+      );
+    } else {
+      this.logger.log(
+        `Capítulo ${number}: ${pages.length} páginas extraídas de ${url}`,
+      );
+    }
 
     return { number, sourceUrl: url, pages };
+  }
+
+  private delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

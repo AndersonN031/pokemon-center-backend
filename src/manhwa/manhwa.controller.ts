@@ -14,7 +14,7 @@ import { ManhwaService } from './manhwa.service';
 export class ManhwaController {
   constructor(private readonly manhwaService: ManhwaService) {}
 
-  // GET /manhwa?page=1&limit=20&source=nocturne&status=ongoing&search=title
+  // GET /manhwa?page=1&limit=20&source=nocfsb&status=Ativo&search=title
   @Get()
   findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -26,7 +26,7 @@ export class ManhwaController {
     return this.manhwaService.findAll({ page, limit, source, status, search });
   }
 
-  // GET /manhwa/logs
+  // GET /manhwa/logs?limit=20
   @Get('logs')
   getLogs(
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -51,12 +51,22 @@ export class ManhwaController {
   }
 
   // POST /manhwa/scrape-all-chapters
+  // Raspa capítulos de TODOS os manhwas (retoma de onde parou)
   @Post('scrape-all-chapters')
   scrapeAllChapters() {
     return this.manhwaService.runScrapeAllChapters();
   }
 
+  // POST /manhwa/fix-empty-chapters?slug=azar-do-cavalo
+  // Corrige capítulos que foram salvos sem páginas (pages = [])
+  // Sem slug = corrige todos do banco
+  @Post('fix-empty-chapters')
+  fixEmptyChapters(@Query('slug') slug?: string) {
+    return this.manhwaService.runFixEmptyChapters(slug);
+  }
+
   // POST /manhwa/:slug/scrape-chapters
+  // Raspa capítulos de um manhwa específico
   @Post(':slug/scrape-chapters')
   scrapeChapters(@Param('slug') slug: string) {
     return this.manhwaService.runScrapeChapters(slug);
