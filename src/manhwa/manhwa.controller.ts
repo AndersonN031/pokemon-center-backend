@@ -50,6 +50,18 @@ export class ManhwaController {
     return this.manhwaService.runScrapeSource('nocfsb', pages);
   }
 
+  // POST /manhwa/scrape-all-chapters
+  @Post('scrape-all-chapters')
+  scrapeAllChapters() {
+    return this.manhwaService.runScrapeAllChapters();
+  }
+
+  // POST /manhwa/:slug/scrape-chapters
+  @Post(':slug/scrape-chapters')
+  scrapeChapters(@Param('slug') slug: string) {
+    return this.manhwaService.runScrapeChapters(slug);
+  }
+
   // GET /manhwa/:slug
   @Get(':slug')
   findOne(@Param('slug') slug: string) {

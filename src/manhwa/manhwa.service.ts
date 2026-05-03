@@ -220,4 +220,243 @@ export class ManhwaService {
   private delay(ms: number) {
     return new Promise((res) => setTimeout(res, ms));
   }
+
+  async runScrapeChapters(slug: string) {
+    const manhwa = await this.prisma.manhwa.findUnique({ where: { slug } });
+    if (!manhwa) throw new NotFoundException(`Manhwa "${slug}" not found`);
+
+    const log = await this.prisma.scrapingLog.create({
+      data: {
+        source: manhwa.source,
+        status: 'running',
+        message: `Scraping chapters: ${slug}`,
+      },
+    });
+
+    this.scrapeChaptersInBackground(log.id, manhwa).catch(() => {});
+    return { message: 'Chapter scraping started', logId: log.id };
+  }
+
+  private async scrapeChaptersInBackground(logId: string, manhwa: any) {
+    let total = 0;
+    try {
+      // 1. Busca lista de capítulos na página de detalhe
+      const html = await this.scraper['fetchPage'](manhwa.sourceUrl);
+      if (!html) throw new Error('Failed to fetch manhwa page');
+
+      const cheerio = await import('cheerio');
+      const $ = cheerio.load(html);
+
+      // Coleta todos os links de capítulo
+      const chapterLinks: { url: string; number: number; title?: string }[] =
+        [];
+
+      $('ul.main-version-detail li a, .wp-manga-chapter a').each((_, el) => {
+        const $el = $(el);
+        const url = $el.attr('href') || '';
+        const text = $el.text().trim();
+
+        // Extrai número do capítulo do texto ex: "Capítulo 12" → 12
+        const match = text.match(/[\d]+([.,]\d+)?/);
+        const number = match ? parseFloat(match[0].replace(',', '.')) : null;
+
+        if (url && number !== null) {
+          chapterLinks.push({ url, number, title: text });
+        }
+      });
+
+      this.logger.log(
+        `Found ${chapterLinks.length} chapters for ${manhwa.title}`,
+      );
+
+      // 2. Para cada capítulo, raspa as páginas
+      for (const ch of chapterLinks) {
+        try {
+          // Pula se já existe
+          const exists = await this.prisma.manhwaChapter.findUnique({
+            where: {
+              manhwaId_number: { manhwaId: manhwa.id, number: ch.number },
+            },
+          });
+          if (exists) continue;
+
+          const chapter = await this.scraper.scrapeNocfsbChapter(
+            ch.url,
+            ch.number,
+          );
+          if (!chapter) continue;
+
+          await this.prisma.manhwaChapter.create({
+            data: {
+              manhwaId: manhwa.id,
+              number: chapter.number,
+              title: ch.title,
+              sourceUrl: ch.url,
+              pages: chapter.pages,
+            },
+          });
+
+          total++;
+          await this.delay(800); // delay respeitoso entre capítulos
+        } catch (err: any) {
+          this.logger.warn(
+            `Error scraping chapter ${ch.number}: ${err.message}`,
+          );
+        }
+      }
+
+      await this.prisma.scrapingLog.update({
+        where: { id: logId },
+        data: {
+          status: 'success',
+          itemsFound: total,
+          message: `Scraped ${total} chapters for ${manhwa.title}`,
+        },
+      });
+    } catch (err: any) {
+      await this.prisma.scrapingLog.update({
+        where: { id: logId },
+        data: { status: 'error', message: err.message },
+      });
+    }
+  }
+
+  async runScrapeAllChapters() {
+    const total = await this.prisma.manhwa.count();
+
+    const log = await this.prisma.scrapingLog.create({
+      data: {
+        source: 'nocfsb',
+        status: 'running',
+        message: `Iniciando raspagem de capítulos de ${total} manhwas`,
+      },
+    });
+
+    this.scrapeAllChaptersInBackground(log.id).catch(() => {});
+    return {
+      message: `Scraping chapters for ${total} manhwas started`,
+      logId: log.id,
+    };
+  }
+
+  private async scrapeAllChaptersInBackground(logId: string) {
+    let totalChapters = 0;
+    let processedManhwas = 0;
+
+    try {
+      // Busca todos os manhwas do banco
+      const manhwas = await this.prisma.manhwa.findMany({
+        orderBy: { createdAt: 'asc' },
+      });
+
+      this.logger.log(`Starting chapter scrape for ${manhwas.length} manhwas`);
+
+      for (const manhwa of manhwas) {
+        try {
+          this.logger.log(
+            `[${processedManhwas + 1}/${manhwas.length}] Scraping: ${manhwa.title}`,
+          );
+
+          const html = await this.scraper['fetchPage'](manhwa.sourceUrl);
+          if (!html) {
+            this.logger.warn(`Failed to fetch page for ${manhwa.title}`);
+            continue;
+          }
+
+          const cheerio = await import('cheerio');
+          const $ = cheerio.load(html);
+
+          const chapterLinks: {
+            url: string;
+            number: number;
+            title?: string;
+          }[] = [];
+
+          $('ul.main-version-detail li a, .wp-manga-chapter a').each(
+            (_, el) => {
+              const $el = $(el);
+              const url = $el.attr('href') || '';
+              const text = $el.text().trim();
+              const match = text.match(/[\d]+([.,]\d+)?/);
+              const number = match
+                ? parseFloat(match[0].replace(',', '.'))
+                : null;
+
+              if (url && number !== null) {
+                chapterLinks.push({ url, number, title: text });
+              }
+            },
+          );
+
+          this.logger.log(
+            `Found ${chapterLinks.length} chapters for ${manhwa.title}`,
+          );
+
+          for (const ch of chapterLinks) {
+            try {
+              // Pula se já existe no banco
+              const exists = await this.prisma.manhwaChapter.findUnique({
+                where: {
+                  manhwaId_number: { manhwaId: manhwa.id, number: ch.number },
+                },
+              });
+              if (exists) continue;
+
+              const chapter = await this.scraper.scrapeNocfsbChapter(
+                ch.url,
+                ch.number,
+              );
+              if (!chapter) continue;
+
+              await this.prisma.manhwaChapter.create({
+                data: {
+                  manhwaId: manhwa.id,
+                  number: chapter.number,
+                  title: ch.title,
+                  sourceUrl: ch.url,
+                  pages: chapter.pages,
+                },
+              });
+
+              totalChapters++;
+              await this.delay(500);
+            } catch (err: any) {
+              this.logger.warn(
+                `Error on chapter ${ch.number} of ${manhwa.title}: ${err.message}`,
+              );
+            }
+          }
+
+          processedManhwas++;
+
+          // Atualiza o log com progresso a cada manhwa concluído
+          await this.prisma.scrapingLog.update({
+            where: { id: logId },
+            data: {
+              itemsFound: totalChapters,
+              message: `[${processedManhwas}/${manhwas.length}] ${totalChapters} capítulos raspados até agora...`,
+            },
+          });
+
+          await this.delay(1000); // delay entre manhwas
+        } catch (err: any) {
+          this.logger.warn(`Error processing ${manhwa.title}: ${err.message}`);
+        }
+      }
+
+      await this.prisma.scrapingLog.update({
+        where: { id: logId },
+        data: {
+          status: 'success',
+          itemsFound: totalChapters,
+          message: `Concluído! ${totalChapters} capítulos raspados de ${processedManhwas} manhwas`,
+        },
+      });
+    } catch (err: any) {
+      await this.prisma.scrapingLog.update({
+        where: { id: logId },
+        data: { status: 'error', message: err.message },
+      });
+    }
+  }
 }
