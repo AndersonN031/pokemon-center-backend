@@ -28,21 +28,31 @@ export interface ScrapedChapter {
 export class ScraperService {
   private readonly logger = new Logger(ScraperService.name);
 
-  // ─── Rate limiting state ─────────────────────────────────────
+  // ─── Rate limiting state ──────────────────────────────────────────────────
   private lastRequestAt = 0;
   private consecutiveErrors = 0;
+  private requestCount = 0; // total de requests bem-sucedidas na sessão
 
-  private readonly MIN_DELAY_MS = 3000;
-  private readonly BASE_BACKOFF_MS = 10000;
-  private readonly MAX_BACKOFF_MS = 120000;
-  private readonly MAX_RETRIES = 4;
+  // Delays conservadores para IP de datacenter (Render, Railway, Fly, etc.)
+  // nocfsb.com tolera ~15-20 requests antes de bloquear IPs de datacenter.
+  // Estratégia: delay mínimo alto + cooldown preventivo a cada N requests.
+  private readonly MIN_DELAY_MS = 6000; // 6s entre cada request
+  private readonly BASE_BACKOFF_MS = 60000; // backoff base no 429 = 1min
+  private readonly MAX_BACKOFF_MS = 300000; // teto = 5min
+  private readonly MAX_RETRIES = 5;
+
+  // Pausa preventiva: a cada 15 requests bem-sucedidas, resfria por 2min
+  // Isso evita chegar no 429 antes que aconteça.
+  private readonly COOLDOWN_EVERY_N = 15;
+  private readonly COOLDOWN_DURATION_MS = 120000; // 2min de pausa preventiva
 
   private readonly httpClient = axios.create({
     timeout: 20000,
     httpsAgent: new https.Agent({ rejectUnauthorized: false }),
     headers: {
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       Accept:
         'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
@@ -56,25 +66,40 @@ export class ScraperService {
     },
   });
 
-  // ─── Core fetch com retry + backoff exponencial ──────────────
+  // ─── Core fetch: delay mínimo + cooldown preventivo + backoff 429 ────────
 
   async fetchPage(url: string, attempt = 1): Promise<string | null> {
-    // Garante intervalo mínimo entre requests
+    // 1. Garante intervalo mínimo entre requests
     const now = Date.now();
     const elapsed = now - this.lastRequestAt;
     if (elapsed < this.MIN_DELAY_MS) {
       await this.delay(this.MIN_DELAY_MS - elapsed);
     }
+
+    // 2. Cooldown preventivo a cada N requests bem-sucedidas
+    //    (só aplica na primeira tentativa para não duplicar a pausa em retries)
+    if (
+      attempt === 1 &&
+      this.requestCount > 0 &&
+      this.requestCount % this.COOLDOWN_EVERY_N === 0
+    ) {
+      this.logger.log(
+        `[cooldown] ${this.requestCount} requests feitas — pausando ${this.COOLDOWN_DURATION_MS / 1000}s para resfriar IP...`,
+      );
+      await this.delay(this.COOLDOWN_DURATION_MS);
+    }
+
     this.lastRequestAt = Date.now();
 
     try {
       const response = await this.httpClient.get<string>(url);
       this.consecutiveErrors = 0;
+      this.requestCount++;
       return response.data;
     } catch (error: any) {
       const status = (error as AxiosError)?.response?.status;
 
-      // ── 429 Too Many Requests ───────────────────────────────
+      // ── 429 Too Many Requests ─────────────────────────────────────────
       if (status === 429) {
         this.consecutiveErrors++;
 
@@ -85,7 +110,7 @@ export class ScraperService {
           return null;
         }
 
-        // Backoff exponencial com cap: 10s → 20s → 40s → 80s → 120s
+        // Backoff exponencial: 60s → 120s → 240s → 300s → 300s
         const backoff = Math.min(
           this.BASE_BACKOFF_MS * Math.pow(2, attempt - 1),
           this.MAX_BACKOFF_MS,
@@ -101,16 +126,17 @@ export class ScraperService {
 
         const waitMs = Math.max(retryAfterMs, backoff);
         this.logger.warn(
-          `[429] Tentativa ${attempt}/${this.MAX_RETRIES} — aguardando ${(waitMs / 1000).toFixed(0)}s → ${url}`,
+          `[429] Tentativa ${attempt}/${this.MAX_RETRIES} — aguardando ` +
+            `${(waitMs / 1000).toFixed(0)}s antes de tentar novamente → ${url}`,
         );
 
         await this.delay(waitMs);
         return this.fetchPage(url, attempt + 1);
       }
 
-      // ── 403 / 503 ───────────────────────────────────────────
+      // ── 403 / 503 ─────────────────────────────────────────────────────
       if ((status === 403 || status === 503) && attempt <= 2) {
-        const wait = 15000 * attempt;
+        const wait = 30000 * attempt; // 30s, 60s
         this.logger.warn(
           `[${status}] Tentativa ${attempt}, aguardando ${wait / 1000}s → ${url}`,
         );
@@ -138,7 +164,7 @@ export class ScraperService {
     return url.replace(/\/$/, '').split('/').pop() ?? this.slugify(url);
   }
 
-  // ─── LIST SCRAPER ────────────────────────────────────────────
+  // ─── LIST SCRAPER ─────────────────────────────────────────────────────────
 
   async scrapeNocfsbList(page = 1): Promise<ScrapedManhwa[]> {
     const url = `https://nocfsb.com/manga/?page=${page}`;
@@ -182,7 +208,7 @@ export class ScraperService {
     return manhwas;
   }
 
-  // ─── DETAIL SCRAPER ──────────────────────────────────────────
+  // ─── DETAIL SCRAPER ───────────────────────────────────────────────────────
 
   async scrapeNocfsbDetail(url: string): Promise<Partial<ScrapedManhwa>> {
     const html = await this.fetchPage(url);
@@ -258,7 +284,7 @@ export class ScraperService {
     return { cover, description, author, artist, status, genres, chapters };
   }
 
-  // ─── CHAPTER PAGE SCRAPER ────────────────────────────────────
+  // ─── CHAPTER PAGE SCRAPER ─────────────────────────────────────────────────
 
   async scrapeNocfsbChapter(
     url: string,
@@ -271,7 +297,6 @@ export class ScraperService {
     const pages: string[] = [];
     const seen = new Set<string>();
 
-    // Seletores em ordem de prioridade (do mais específico ao mais genérico)
     const imgSelectors = [
       '#readerarea img',
       '.reading-content img',
@@ -305,9 +330,8 @@ export class ScraperService {
       if (pages.length > 0) break;
     }
 
-    // Fallback: tenta extrair URLs de variáveis JS (padrão WP Manga Reader)
+    // Fallback: ts_reader.run() — padrão WP Manga Reader
     if (pages.length === 0) {
-      // Tenta ts_reader.run({"sources":[{"images":["..."]}]})
       const tsMatch = html.match(/ts_reader\.run\((\{.*?\})\)/s);
       if (tsMatch) {
         try {
