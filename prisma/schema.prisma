@@ -29,3 +29,52 @@ model Pokemon {
 
   createdAt DateTime @default(now())
 }
+
+model Manhwa {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  cover       String?
+  description String?  @db.Text
+  author      String?
+  artist      String?
+  status      String?  // ongoing, completed, hiatus
+  genres      String[] // array of genres
+  rating      Float?
+  views       Int      @default(0)
+  chapters    Int?     // total chapters count
+  source      String   // "nocturne" or "cafe-com-yaoi"
+  sourceUrl   String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ManhwaChapter ManhwaChapter[]
+
+  @@map("manhwas")
+}
+
+model ManhwaChapter {
+  id          String   @id @default(cuid())
+  manhwaId    String
+  manhwa      Manhwa   @relation(fields: [manhwaId], references: [id], onDelete: Cascade)
+  number      Float
+  title       String?
+  sourceUrl   String
+  pages       String[] // array of image URLs
+  scrapedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([manhwaId, number])
+  @@map("manhwa_chapters")
+}
+
+model ScrapingLog {
+  id         String   @id @default(cuid())
+  source     String
+  status     String   // "success" | "error" | "running"
+  message    String?  @db.Text
+  itemsFound Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("scraping_logs")
+}

@@ -6,7 +6,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { INVALID_CREDENTIALS, SPECIAL_CHARACTERS } from '../auth.constants';
+import { SPECIAL_CHARACTERS } from '../auth.constants';
 
 export class RegisterDto {
   @ApiProperty({ title: 'Name', example: 'John Doe' })
@@ -17,11 +17,11 @@ export class RegisterDto {
 
   @ApiProperty({ title: 'Email', example: 'john.doe@example.com' })
   @IsEmail()
-  @MaxLength(254, {message: "Máximo 254 caracteres"})
+  @MaxLength(254, { message: 'Máximo 254 caracteres' })
   email: string;
 
   @ApiProperty({ title: 'Password', example: 'JohnDoe@123' })
-   @MaxLength(128, {message: "Máximo 128 caracteres"})
+  @MaxLength(128, { message: 'Máximo 128 caracteres' })
   @IsStrongPassword(
     {
       minLength: 6,

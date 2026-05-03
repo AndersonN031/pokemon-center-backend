@@ -30,20 +30,19 @@ export class PokemonController {
   async globalListPokemons(
     @Query('page') page = 1,
     @Query('limit') limit = 20,
-    @Res() res,
   ): Promise<Pokemon> {
     const pokemon = await this.pokemonService.globalListPokemons(
       Number(page),
       Number(limit),
     );
-    return res.status(200).json(pokemon);
+    return pokemon;
   }
 
   @Get()
-  async findAll(@Req() req, @Res() res): Promise<Pokemon> {
+  async findAll(@Req() req): Promise<Pokemon> {
     const userId = req.user.userId;
     const pokemon = await this.pokemonService.findAll(userId);
-    return res.status(200).json(pokemon);
+    return pokemon;
   }
 
   @Get(':id')
